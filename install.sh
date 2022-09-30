@@ -447,7 +447,11 @@ function modify_nginx_other() {
   sed -i "/proxy_pass/c \\\tproxy_pass http://127.0.0.1:${inbound_port};" ${nginx_conf}
 }
 
-
+function modify_nginx_ssl() {
+  sed -i "/ssl_certificate /c \\\tssl_certificate /ssl/${new_domain}.crt;" ${nginx_conf}
+  sed -i "/ssl_certificate_key/c \\\tssl_certificate_key /ssl/${new_domain}.key;" ${nginx_conf}
+  judge "Nginx ssl 修改"
+}
 
 function modify_port() {
   read -rp "请输入端口号(默认：443)：" PORT
@@ -674,6 +678,7 @@ function nginx_add_ip() {
   sed -i "s/xxx/${new_domain}/g" ${nginx_conf}
   modify_port
   modify_nginx_other
+  modify_nginx_ssl
   systemctl restart nginx
 }
 
@@ -718,6 +723,7 @@ function xray_uninstall() {
   [yY][eE][sS] | [yY])
     if [[ "${ID}" == "centos" || "${ID}" == "ol" ]]; then
       yum remove nginx -y
+      rm -rf ${nginx_conf_dir}/*
     else
       apt purge nginx -y
     fi
@@ -749,7 +755,7 @@ function restart_all() {
 function ws_information() {
   DOMAINS=$(cat ${domain_tmp_dir}/domain)
   IFS=$'\n'
-  cnt=0
+  cnt=${#DOMAINS[@]}
   for s in $DOMAINS;
   do
 	  UUID=$(cat ${xray_conf_dir}/config.json | jq .inbounds[${cnt}].settings.clients[0].id | tr -d '"')
@@ -765,14 +771,14 @@ function ws_information() {
 	  echo -e "${Red} 伪装类型（type）：${Font} none "
 	  echo -e "${Red} 路径（path）：${Font} $WS_PATH "
 	  echo -e "${Red} 底层传输安全：${Font} tls "
-	  ((cnt+=1))
+	  ((cnt=cnt-1))
   done
 }
 
 function ws_link() {
   DOMAINS=$(cat ${domain_tmp_dir}/domain)
   IFS=$'\n'
-  cnt=0
+  cnt=${#DOMAINS[@]}
   for DOMAIN in $DOMAINS;
   do
 	  UUID=$(cat ${xray_conf_dir}/config.json | jq .inbounds[${cnt}].settings.clients[0].id | tr -d '"')
@@ -785,7 +791,7 @@ function ws_link() {
 	  print_ok "vless://$UUID@$DOMAIN:$PORT?type=ws&security=tls&path=%2f${WS_PATH_WITHOUT_SLASH}%2f#WS_TLS_wulabing-$DOMAIN"
 	  print_ok "URL 二维码（VLESS + WebSocket + TLS）（请在浏览器中访问）"
 	  print_ok "https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=vless://$UUID@$DOMAIN:$PORT?type=ws%26security=tls%26path=%2f${WS_PATH_WITHOUT_SLASH}%2f%23WS_TLS_wulabing-$DOMAIN"
-	  ((cnt+=1))
+	  ((cnt=cnt-1))
   done
 }
 
