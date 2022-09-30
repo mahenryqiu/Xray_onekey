@@ -27,7 +27,7 @@ OK="${Green}[OK]${Font}"
 ERROR="${Red}[ERROR]${Font}"
 
 # 变量
-shell_version="0.2.1"
+shell_version="0.2.2"
 github_branch="nginx_forward"
 xray_conf_dir="/usr/local/etc/xray"
 website_dir="/www/xray_web/"
@@ -91,12 +91,12 @@ function system_check() {
     fi
     print_ok "当前系统为 Centos ${VERSION_ID} ${VERSION}"
     INS="yum install -y"
-    wget -N -P /etc/yum.repos.d/ https://raw.githubusercontents.com/wulabing/Xray_onekey/${github_branch}/basic/nginx.repo
+    wget -N -P /etc/yum.repos.d/ https://raw.githubusercontent.com/wulabing/Xray_onekey/${github_branch}/basic/nginx.repo
   elif [[ "${ID}" == "ol" ]]; then
     print_ok "当前系统为 Oracle Linux ${VERSION_ID} ${VERSION}"
     INS="yum install -y"
     compatible_nginx_conf="yes"
-    wget -N -P /etc/yum.repos.d/ https://raw.githubusercontents.com/wulabing/Xray_onekey/${github_branch}/basic/nginx.repo
+    wget -N -P /etc/yum.repos.d/ https://raw.githubusercontent.com/wulabing/Xray_onekey/${github_branch}/basic/nginx.repo
   elif [[ "${ID}" == "debian" && ${VERSION_ID} -ge 9 ]]; then
     if [[ ${VERSION_ID} -ge 10 ]]; then
       compatible_nginx_conf="no"
@@ -224,7 +224,7 @@ function dependency_install() {
   ${INS} jq
 
   if ! command -v jq; then
-    wget -P /usr/bin https://raw.githubusercontents.com/wulabing/Xray_onekey/${github_branch}/binary/jq && chmod +x /usr/bin/jq
+    wget -P /usr/bin https://raw.githubusercontent.com/wulabing/Xray_onekey/${github_branch}/binary/jq && chmod +x /usr/bin/jq
     judge "安装 jq"
   fi
 
@@ -249,7 +249,6 @@ function basic_optimization() {
 function domain_check() {
   read -rp "请输入你的域名信息(eg: www.wulabing.com):" domain
   domain_ip=$(curl -sm8 ipget.net/?ip="${domain}")
-  print_ok "正在获取 IP 地址信息，请耐心等待"
   wgcfv4_status=$(curl -s4m8 https://www.cloudflare.com/cdn-cgi/trace -k | grep warp | cut -d= -f2)
   wgcfv6_status=$(curl -s6m8 https://www.cloudflare.com/cdn-cgi/trace -k | grep warp | cut -d= -f2)
   if [[ ${wgcfv4_status} =~ "on"|"plus" ]] || [[ ${wgcfv6_status} =~ "on"|"plus" ]]; then
@@ -290,6 +289,50 @@ function domain_check() {
   fi
 }
 
+function new_domain_check() {
+  read -rp "请输入你的域名信息(eg: www.wulabing.com):" new_domain
+  domain_ip=$(curl -sm8 ipget.net/?ip="${new_domain}")
+  print_ok "正在获取 IP 地址信息，请耐心等待"
+  wgcfv4_status=$(curl -s4m8 https://www.cloudflare.com/cdn-cgi/trace -k | grep warp | cut -d= -f2)
+  wgcfv6_status=$(curl -s6m8 https://www.cloudflare.com/cdn-cgi/trace -k | grep warp | cut -d= -f2)
+  if [[ ${wgcfv4_status} =~ "on"|"plus" ]] || [[ ${wgcfv6_status} =~ "on"|"plus" ]]; then
+    # 关闭wgcf-warp，以防误判VPS IP情况
+    wg-quick down wgcf >/dev/null 2>&1
+    print_ok "已关闭 wgcf-warp"
+  fi
+  read -rp "请输入你的ip信息:" local_ipv4
+  if ip addr | grep -q "${local_ipv4}"; then
+     print_ok "ip正确"
+  else
+     print_error "ip找不到"
+     #exit 2
+  fi
+  echo -e "域名通过 DNS 解析的 IP 地址：${domain_ip}"
+  echo -e "本机公网 IPv4 地址： ${local_ipv4}"
+  sleep 2
+  if [[ ${domain_ip} == "${local_ipv4}" ]]; then
+    print_ok "域名通过 DNS 解析的 IP 地址与 本机 IPv4 地址匹配"
+    sleep 2
+  elif [[ ${domain_ip} == "${local_ipv6}" ]]; then
+    print_ok "域名通过 DNS 解析的 IP 地址与 本机 IPv6 地址匹配"
+    sleep 2
+  else
+    print_error "请确保域名添加了正确的 A / AAAA 记录，否则将无法正常使用 xray"
+    print_error "域名通过 DNS 解析的 IP 地址与 本机 IPv4 / IPv6 地址不匹配，是否继续安装？（y/n）" && read -r install
+    case $install in
+    [yY][eE][sS] | [yY])
+      print_ok "继续安装"
+      sleep 2
+      ;;
+    *)
+      print_error "安装终止"
+      exit 2
+      ;;
+    esac
+  fi
+  echo $domain >>$domain_tmp_dir/domain
+  judge "域名记录"
+}
 function port_exist_check() {
   if [[ 0 -eq $(lsof -i:"$1" | grep -i -c "listen") ]]; then
     print_ok "$1 端口未被占用"
@@ -305,13 +348,13 @@ function port_exist_check() {
   fi
 }
 function update_sh() {
-  ol_version=$(curl -L -s https://raw.githubusercontents.com/wulabing/Xray_onekey/${github_branch}/install.sh | grep "shell_version=" | head -1 | awk -F '=|"' '{print $3}')
+  ol_version=$(curl -L -s https://raw.githubusercontent.com/wulabing/Xray_onekey/${github_branch}/install.sh | grep "shell_version=" | head -1 | awk -F '=|"' '{print $3}')
   if [[ "$shell_version" != "$(echo -e "$shell_version\n$ol_version" | sort -rV | head -1)" ]]; then
     print_ok "存在新版本，是否更新 [Y/N]?"
     read -r update_confirm
     case $update_confirm in
     [yY][eE][sS] | [yY])
-      wget -N --no-check-certificate https://raw.githubusercontents.com/wulabing/Xray_onekey/${github_branch}/install.sh
+      wget -N --no-check-certificate https://raw.githubusercontent.com/wulabing/Xray_onekey/${github_branch}/install.sh
       print_ok "更新完成"
       print_ok "您可以通过 bash $0 执行本程序"
       exit 0
@@ -343,6 +386,49 @@ function modify_ws() {
   cat ${xray_conf_dir}/config.json | jq 'setpath(["inbounds",0,"streamSettings","wsSettings","path"];"'${WS_PATH}'")' >${xray_conf_dir}/config_tmp.json
   xray_tmp_config_file_check_and_use
   judge "Xray ws 修改"
+}
+
+function xray_add_ip() {
+ # port
+ first_port=$(cat ${xray_conf_dir}/config.json | jq .inbounds[0].port | tr -d '"')
+ domain_cnt=$(sed -n '$=' ${domain_tmp_dir}/domain)
+ inbound_port=`expr ${first_port} + ${domain_cnt} - 1`
+ # id
+ new_UUID=$(cat /proc/sys/kernel/random/uuid)
+ # path
+ WS_PATH="/$(head -n 10 /dev/urandom | md5sum | head -c ${random_num})/"
+ new_tag_in=${inbound_port}"_in"
+ new_tag_out=${inbound_port}"_out"
+ new_ip=${local_ipv4}
+ cat ${xray_conf_dir}/config.json | jq '.inbounds += [.inbounds[0]]' >${xray_conf_dir}/config_tmp.json
+  xray_tmp_config_file_check_and_use
+ cat ${xray_conf_dir}/config.json | jq 'setpath(["inbounds",0,"tag"];"'${new_tag_in}'")' >${xray_conf_dir}/config_tmp.json
+  xray_tmp_config_file_check_and_use
+ cat ${xray_conf_dir}/config.json | jq 'setpath(["inbounds",0,"port"];'${inbound_port}')' >${xray_conf_dir}/config_tmp.json
+  xray_tmp_config_file_check_and_use
+ cat ${xray_conf_dir}/config.json | jq 'setpath(["inbounds",0,"settings","clients",0,"id"];"'${new_UUID}'")' >${xray_conf_dir}/config_tmp.json
+  xray_tmp_config_file_check_and_use
+ cat ${xray_conf_dir}/config.json | jq 'setpath(["inbounds",0,"streamSettings","wsSettings","path"];"'${WS_PATH}'")' >${xray_conf_dir}/config_tmp.json
+  xray_tmp_config_file_check_and_use
+
+
+ cat ${xray_conf_dir}/config.json | jq '.outbounds += [.outbounds[0]]' >${xray_conf_dir}/config_tmp.json
+  xray_tmp_config_file_check_and_use
+ cat ${xray_conf_dir}/config.json | jq 'setpath(["outbounds",0,"sendThrough"];"'${new_ip}'")' >${xray_conf_dir}/config_tmp.json
+  xray_tmp_config_file_check_and_use
+ cat ${xray_conf_dir}/config.json | jq 'setpath(["outbounds",0,"protocol"];"freedom")' >${xray_conf_dir}/config_tmp.json
+  xray_tmp_config_file_check_and_use
+ cat ${xray_conf_dir}/config.json | jq 'setpath(["outbounds",0,"settings","domainStrategy"];"UseIP")' >${xray_conf_dir}/config_tmp.json
+  xray_tmp_config_file_check_and_use
+ cat ${xray_conf_dir}/config.json | jq 'setpath(["outbounds",0,"tag"];"'${new_tag_out}'")' >${xray_conf_dir}/config_tmp.json
+  xray_tmp_config_file_check_and_use
+
+ cat ${xray_conf_dir}/config.json | jq '.routing.rules += [.routing.rules[0]]' >${xray_conf_dir}/config_tmp.json
+  xray_tmp_config_file_check_and_use
+ cat ${xray_conf_dir}/config.json | jq 'setpath(["routing","rules",0,"inboundTag"];"'${new_tag_in}'")' >${xray_conf_dir}/config_tmp.json
+  xray_tmp_config_file_check_and_use
+ cat ${xray_conf_dir}/config.json | jq 'setpath(["routing","rules",0,"outboundTag"];"'${new_tag_out}'")' >${xray_conf_dir}/config_tmp.json
+  xray_tmp_config_file_check_and_use
 }
 
 function modify_nginx_port() {
@@ -377,7 +463,7 @@ function modify_port() {
 function configure_nginx_temp(){
   nginx_conf="/etc/nginx/conf.d/${domain}.conf"
   cd /etc/nginx/conf.d/ && rm -f ${domain}.conf
-  wget -O ${domain}.conf https://raw.githubusercontents.com/wulabing/Xray_onekey/${github_branch}/config/web_temp.conf
+  wget -O ${domain}.conf https://raw.githubusercontent.com/wulabing/Xray_onekey/${github_branch}/config/web_temp.conf
   sed -i "s/xxx/${domain}/g" ${nginx_conf}
 }
 
@@ -385,16 +471,15 @@ function configure_nginx() {
   nginx_conf="/etc/nginx/conf.d/${domain}.conf"
   cd /etc/nginx/conf.d/ && rm -f ${domain}.conf
   if [[ $compatible_nginx_conf == "yes" ]]; then
-    wget -O ${domain}.conf https://raw.githubusercontents.com/wulabing/Xray_onekey/${github_branch}/config/web_compatible.conf
+    wget -O ${domain}.conf https://raw.githubusercontent.com/wulabing/Xray_onekey/${github_branch}/config/web_compatible.conf
   elif [[ $compatible_nginx_conf == "no" ]]; then
-    wget -O ${domain}.conf https://raw.githubusercontents.com/wulabing/Xray_onekey/${github_branch}/config/web.conf
+    wget -O ${domain}.conf https://raw.githubusercontent.com/wulabing/Xray_onekey/${github_branch}/config/web.conf
   fi
   sed -i "s/xxx/${domain}/g" ${nginx_conf}
   modify_port
   modify_nginx_other
   systemctl restart nginx
 }
-
 
 function modify_inbound_port() {
   inbound_port=$((RANDOM + 10000))
@@ -404,7 +489,7 @@ function modify_inbound_port() {
 }
 
 function configure_xray_ws() {
-  cd /usr/local/etc/xray && rm -f config.json && wget -O config.json https://raw.githubusercontents.com/wulabing/Xray_onekey/${github_branch}/config/xray_tls_ws.json
+  cd /usr/local/etc/xray && rm -f config.json && wget -O config.json https://raw.githubusercontent.com/wulabing/Xray_onekey/${github_branch}/config/xray_tls_ws.json
   modify_UUID
   modify_ws
   modify_inbound_port
@@ -505,6 +590,95 @@ function ssl_judge_and_install() {
   chown -R nobody.$cert_group /ssl/*
 }
 
+function nginx_add_ip() {
+  nginx_conf="/etc/nginx/conf.d/${new_domain}.conf"
+  cd /etc/nginx/conf.d/ && rm -f ${new_domain}.conf
+  wget -O ${new_domain}.conf https://raw.githubusercontent.com/wulabing/Xray_onekey/${github_branch}/config/web_temp.conf
+  sed -i "s/xxx/${new_domain}/g" ${nginx_conf}
+
+
+  mkdir -p /ssl >/dev/null 2>&1
+  key_dir="/ssl/${new_domain}.key"
+  crt_dir="/ssl/${new_domain}.crt"
+  if [[ -f ${key_dir} || -f ${crt_dir} ]]; then
+    print_ok "/ssl 目录下证书文件已存在"
+    print_ok "是否删除 /ssl 目录下的证书文件 [Y/N]?"
+    read -r ssl_delete
+    case $ssl_delete in
+    [yY][eE][sS] | [yY])
+      rm -rf /ssl/${new_domain}.*
+      print_ok "已删除"
+      ;;
+    *) ;;
+
+    esac
+  fi
+
+  if [[ -f ${key_dir} || -f ${crt_dir} ]]; then
+    echo "证书文件已存在"
+  elif [[ -f "$HOME/.acme.sh/${new_domain}_ecc/${new_domain}.key" && -f "$HOME/.acme.sh/${new_domain}_ecc/${new_domain}.cer" ]]; then
+    echo "证书文件已存在"
+    "$HOME"/.acme.sh/acme.sh --installcert -d "${new_domain}" --fullchainpath /ssl/${new_domain}.crt --keypath /ssl/${new_domain}.key --ecc
+    judge "证书应用"
+  else
+    mkdir /ssl
+    ssl_install
+  fi
+
+  
+  "$HOME"/.acme.sh/acme.sh --set-default-ca --server letsencrypt
+
+  systemctl restart nginx
+
+  if "$HOME"/.acme.sh/acme.sh --issue -d "${new_domain}" -k ec-256 --webroot "$website_dir" --force; then
+    print_ok "SSL 证书生成成功"
+    sleep 2
+    if "$HOME"/.acme.sh/acme.sh --installcert -d "${new_domain}" --fullchainpath /ssl/${new_domain}.crt --keypath /ssl/${new_domain}.key --reloadcmd "systemctl restart xray" --reloadcmd "systemctl restart nginx" --ecc --force; then
+      print_ok "SSL 证书配置成功"
+      sleep 2
+      if [[ -n $(type -P wgcf) && -n $(type -P wg-quick) ]]; then
+        wg-quick up wgcf >/dev/null 2>&1
+        print_ok "已启动 wgcf-warp"
+      fi
+    fi
+  elif "$HOME"/.acme.sh/acme.sh --issue -d "${new_domain}" -k ec-256 --webroot "$website_dir" --force --listen-v6; then
+    print_ok "SSL 证书生成成功"
+    sleep 2
+    if "$HOME"/.acme.sh/acme.sh --installcert -d "${new_domain}" --fullchainpath /ssl/${new_domain}.crt --keypath /ssl/${new_domain}.key --reloadcmd "systemctl restart xray" --reloadcmd "systemctl restart nginx" --ecc --force; then
+      print_ok "SSL 证书配置成功"
+      sleep 2
+      if [[ -n $(type -P wgcf) && -n $(type -P wg-quick) ]]; then
+        wg-quick up wgcf >/dev/null 2>&1
+        print_ok "已启动 wgcf-warp"
+      fi
+    fi
+  else
+    print_error "SSL 证书生成失败"
+    rm -rf "$HOME/.acme.sh/${new_domain}_ecc"
+    if [[ -n $(type -P wgcf) && -n $(type -P wg-quick) ]]; then
+      wg-quick up wgcf >/dev/null 2>&1
+      print_ok "已启动 wgcf-warp"
+    fi
+    exit 1
+  fi
+
+  # Xray 默认以 nobody 用户运行，证书权限适配
+  chown -R nobody.$cert_group /ssl/*
+
+  cd /etc/nginx/conf.d/ && rm -f ${new_domain}.conf
+  if [[ $compatible_nginx_conf == "yes" ]]; then
+    wget -O ${new_domain}.conf https://raw.githubusercontent.com/wulabing/Xray_onekey/${github_branch}/config/web_compatible.conf
+  elif [[ $compatible_nginx_conf == "no" ]]; then
+    wget -O ${new_domain}.conf https://raw.githubusercontent.com/wulabing/Xray_onekey/${github_branch}/config/web.conf
+  fi
+  sed -i "s/xxx/${new_domain}/g" ${nginx_conf}
+  modify_port
+  modify_nginx_other
+  systemctl restart nginx
+}
+
+
+
 function generate_certificate() {
   if [[ -z ${local_ipv4} && -n ${local_ipv6} ]]; then
     signedcert=$(xray tls cert -domain="$local_ipv6" -name="$local_ipv6" -org="$local_ipv6" -expire=87600h)
@@ -522,10 +696,17 @@ function generate_certificate() {
 function configure_web() {
   rm -rf /www/xray_web
   mkdir -p /www/xray_web
-#  wget -O web.tar.gz https://raw.githubusercontents.com/wulabing/Xray_onekey/main/basic/web.tar.gz
-#  tar xzf web.tar.gz -C /www/xray_web
-#  judge "站点伪装"
-#  rm -f web.tar.gz
+  print_ok "是否配置伪装网页？[Y/N]"
+  read -r webpage
+  case $webpage in
+  [yY][eE][sS] | [yY])
+    wget -O web.tar.gz https://raw.githubusercontent.com/wulabing/Xray_onekey/main/basic/web.tar.gz
+    tar xzf web.tar.gz -C /www/xray_web
+    judge "站点伪装"
+    rm -f web.tar.gz
+    ;;
+  *) ;;
+  esac
 }
 
 function xray_uninstall() {
@@ -566,36 +747,46 @@ function restart_all() {
 
 
 function ws_information() {
-  DOMAIN=$(cat ${domain_tmp_dir}/domain)
-  UUID=$(cat ${xray_conf_dir}/config.json | jq .inbounds[0].settings.clients[0].id | tr -d '"')
-  PORT=$(cat "/etc/nginx/conf.d/${DOMAIN}.conf" | grep 'ssl http2' | awk -F ' ' '{print $2}' )
-  FLOW=$(cat ${xray_conf_dir}/config.json | jq .inbounds[0].settings.clients[0].flow | tr -d '"')
-  WS_PATH=$(cat ${xray_conf_dir}/config.json | jq .inbounds[0].streamSettings.wsSettings.path | tr -d '"')
-
-
-  echo -e "${Red} Xray 配置信息 ${Font}"
-  echo -e "${Red} 地址（address）:${Font}  $DOMAIN"
-  echo -e "${Red} 端口（port）：${Font}  $PORT"
-  echo -e "${Red} 用户 ID（UUID）：${Font} $UUID"
-  echo -e "${Red} 加密方式（security）：${Font} none "
-  echo -e "${Red} 传输协议（network）：${Font} ws "
-  echo -e "${Red} 伪装类型（type）：${Font} none "
-  echo -e "${Red} 路径（path）：${Font} $WS_PATH "
-  echo -e "${Red} 底层传输安全：${Font} tls "
+  DOMAINS=$(cat ${domain_tmp_dir}/domain)
+  IFS=$'\n'
+  cnt=0
+  for s in $DOMAINS;
+  do
+	  UUID=$(cat ${xray_conf_dir}/config.json | jq .inbounds[${cnt}].settings.clients[0].id | tr -d '"')
+	  PORT=$(cat "/etc/nginx/conf.d/${s}.conf" | grep 'ssl http2' | awk -F ' ' '{print $2}' )
+	  FLOW=$(cat ${xray_conf_dir}/config.json | jq .inbounds[${cnt}].settings.clients[0].flow | tr -d '"')
+	  WS_PATH=$(cat ${xray_conf_dir}/config.json | jq .inbounds[${cnt}].streamSettings.wsSettings.path | tr -d '"')
+	  echo -e "${Red} Xray 配置信息 ${Font}"
+	  echo -e "${Red} 地址（address）:${Font}  $s"
+	  echo -e "${Red} 端口（port）：${Font}  $PORT"
+	  echo -e "${Red} 用户 ID（UUID）：${Font} $UUID"
+	  echo -e "${Red} 加密方式（security）：${Font} none "
+	  echo -e "${Red} 传输协议（network）：${Font} ws "
+	  echo -e "${Red} 伪装类型（type）：${Font} none "
+	  echo -e "${Red} 路径（path）：${Font} $WS_PATH "
+	  echo -e "${Red} 底层传输安全：${Font} tls "
+	  ((cnt+=1))
+  done
 }
 
 function ws_link() {
-  DOMAIN=$(cat ${domain_tmp_dir}/domain)
-  UUID=$(cat ${xray_conf_dir}/config.json | jq .inbounds[0].settings.clients[0].id | tr -d '"')
-  PORT=$(cat "/etc/nginx/conf.d/${DOMAIN}.conf" | grep 'ssl http2' | awk -F ' ' '{print $2}' )
-  FLOW=$(cat ${xray_conf_dir}/config.json | jq .inbounds[0].settings.clients[0].flow | tr -d '"')
-  WS_PATH=$(cat ${xray_conf_dir}/config.json | jq .inbounds[0].streamSettings.wsSettings.path | tr -d '"')
-  WS_PATH_WITHOUT_SLASH=$(echo $WS_PATH | tr -d '/')
+  DOMAINS=$(cat ${domain_tmp_dir}/domain)
+  IFS=$'\n'
+  cnt=0
+  for DOMAIN in $DOMAINS;
+  do
+	  UUID=$(cat ${xray_conf_dir}/config.json | jq .inbounds[${cnt}].settings.clients[0].id | tr -d '"')
+	  PORT=$(cat "/etc/nginx/conf.d/${DOMAIN}.conf" | grep 'ssl http2' | awk -F ' ' '{print $2}' )
+	  FLOW=$(cat ${xray_conf_dir}/config.json | jq .inbounds[${cnt}].settings.clients[0].flow | tr -d '"')
+	  WS_PATH=$(cat ${xray_conf_dir}/config.json | jq .inbounds[${cnt}].streamSettings.wsSettings.path | tr -d '"')
+	  WS_PATH_WITHOUT_SLASH=$(echo $WS_PATH | tr -d '/')
 
-  print_ok "URL 链接（VLESS + WebSocket + TLS）"
-  print_ok "vless://$UUID@$DOMAIN:$PORT?type=ws&security=tls&path=%2f${WS_PATH_WITHOUT_SLASH}%2f#WS_TLS_wulabing-$DOMAIN"
-  print_ok "URL 二维码（VLESS + WebSocket + TLS）（请在浏览器中访问）"
-  print_ok "https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=vless://$UUID@$DOMAIN:$PORT?type=ws%26security=tls%26path=%2f${WS_PATH_WITHOUT_SLASH}%2f%23WS_TLS_wulabing-$DOMAIN"
+	  print_ok "URL 链接（VLESS + WebSocket + TLS）"
+	  print_ok "vless://$UUID@$DOMAIN:$PORT?type=ws&security=tls&path=%2f${WS_PATH_WITHOUT_SLASH}%2f#WS_TLS_wulabing-$DOMAIN"
+	  print_ok "URL 二维码（VLESS + WebSocket + TLS）（请在浏览器中访问）"
+	  print_ok "https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=vless://$UUID@$DOMAIN:$PORT?type=ws%26security=tls%26path=%2f${WS_PATH_WITHOUT_SLASH}%2f%23WS_TLS_wulabing-$DOMAIN"
+	  ((cnt+=1))
+  done
 }
 
 function basic_ws_information() {
@@ -615,7 +806,7 @@ function show_error_log() {
 
 function bbr_boost_sh() {
   [ -f "tcp.sh" ] && rm -rf ./tcp.sh
-  wget -N --no-check-certificate "https://raw.githubusercontents.com/ylx2016/Linux-NetSpeed/master/tcp.sh" && chmod +x tcp.sh && ./tcp.sh
+  wget -N --no-check-certificate "https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcp.sh" && chmod +x tcp.sh && ./tcp.sh
 }
 
 function mtproxy_sh() {
@@ -636,6 +827,14 @@ function install_xray_ws() {
   configure_web
   ssl_judge_and_install
   configure_nginx
+  restart_all
+  basic_ws_information
+}
+
+function domain_add() {
+  new_domain_check
+  xray_add_ip
+  nginx_add_ip
   restart_all
   basic_ws_information
 }
@@ -667,6 +866,7 @@ menu() {
   echo -e "${Green}34.${Font} 更新 Xray-core"
   echo -e "${Green}35.${Font} 安装 Xray-core 测试版(Pre)"
   echo -e "${Green}36.${Font} 手动更新SSL证书"
+  echo -e "${Green}37.${Font} 新增域名"
   echo -e "${Green}40.${Font} 退出"
   read -rp "请输入数字：" menu_num
   case $menu_num in
@@ -729,6 +929,9 @@ menu() {
   36)
     "/root/.acme.sh"/acme.sh --cron --home "/root/.acme.sh"
     restart_all
+    ;;
+  37)
+    domain_add
     ;;
   40)
     exit 0
