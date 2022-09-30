@@ -330,7 +330,7 @@ function new_domain_check() {
       ;;
     esac
   fi
-  echo $domain >>$domain_tmp_dir/domain
+  echo $new_domain >>$domain_tmp_dir/domain
   judge "域名记录"
 }
 function port_exist_check() {
