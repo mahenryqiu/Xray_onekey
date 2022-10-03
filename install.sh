@@ -755,7 +755,8 @@ function restart_all() {
 function ws_information() {
   DOMAINS=$(cat ${domain_tmp_dir}/domain)
   IFS=$'\n'
-  cnt=${#DOMAINS[@]}
+  cnt=$(cat ${domain_tmp_dir}/domain | wc -l)
+  ((cnt=cnt-1))
   for s in $DOMAINS;
   do
 	  UUID=$(cat ${xray_conf_dir}/config.json | jq .inbounds[${cnt}].settings.clients[0].id | tr -d '"')
@@ -778,7 +779,8 @@ function ws_information() {
 function ws_link() {
   DOMAINS=$(cat ${domain_tmp_dir}/domain)
   IFS=$'\n'
-  cnt=${#DOMAINS[@]}
+  cnt=$(cat ${domain_tmp_dir}/domain | wc -l)
+  ((cnt=cnt-1))
   for DOMAIN in $DOMAINS;
   do
 	  UUID=$(cat ${xray_conf_dir}/config.json | jq .inbounds[${cnt}].settings.clients[0].id | tr -d '"')
