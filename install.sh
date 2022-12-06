@@ -163,6 +163,7 @@ function nginx_install() {
   if ! command -v nginx >/dev/null 2>&1; then
     ${INS} nginx
     judge "Nginx 安装"
+    systemctl enable nginx
   else
     print_ok "Nginx 已存在"
     # 防止部分异常
@@ -503,7 +504,7 @@ function xray_install() {
   print_ok "安装 Xray"
   curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh | bash -s -- install
   judge "Xray 安装"
-
+  systemctl enable xray
   # 用于生成 Xray 的导入链接
   echo $domain >$domain_tmp_dir/domain
   judge "域名记录"
