@@ -257,8 +257,8 @@ function domain_check() {
     wg-quick down wgcf >/dev/null 2>&1
     print_ok "已关闭 wgcf-warp"
   fi
-  local_ipv4=$(curl -s4m8 http://ip.gs)
-  local_ipv6=$(curl -s6m8 http://ip.gs)
+  local_ipv4=$(curl -s4m8 https://ip.gs)
+  local_ipv6=$(curl -s6m8 https://ip.gs)
   if [[ -z ${local_ipv4} && -n ${local_ipv6} ]]; then
     # 纯IPv6 VPS，自动添加DNS64服务器以备acme.sh申请证书使用
     echo -e nameserver 2a01:4f8:c2c:123f::1 > /etc/resolv.conf
@@ -432,15 +432,27 @@ function xray_add_ip() {
   xray_tmp_config_file_check_and_use
 }
 
+function xray_config() {
+  inbound_port=$((RANDOM + 10000))
+  WS_PATH="/$(head -n 10 /dev/urandom | md5sum | head -c ${random_num})/"
+}
+
+
 function modify_nginx_port() {
   sed -i "/ssl http2;$/c \\\tlisten ${PORT} ssl http2;" ${nginx_conf}
-  sed -i "3c \\\tlisten [::]:${PORT} ssl http2;" ${nginx_conf}
+  sed -i "3c \\\tlisten [::]:${PORT} http2;" ${nginx_conf}
   judge "Xray port 修改"
 }
 
 function modify_nginx_ws(){
   sed -i "/location/c \\\tlocation ${WS_PATH}" ${nginx_conf}
   judge "Nginx ws 修改"
+}
+
+function modify_nginx_ssl_1() {
+  sed -i "/ssl_certificate /c \\\tssl_certificate /ssl/${domain}.crt;" ${nginx_conf}
+  sed -i "/ssl_certificate_key/c \\\tssl_certificate_key /ssl/${domain}.key;" ${nginx_conf}
+  judge "Nginx ssl 修改"
 }
 
 function modify_nginx_other() {
@@ -483,6 +495,7 @@ function configure_nginx() {
   sed -i "s/xxx/${domain}/g" ${nginx_conf}
   modify_port
   modify_nginx_other
+  modify_nginx_ssl_1
   systemctl restart nginx
 }
 
@@ -531,7 +544,7 @@ function acme() {
   if "$HOME"/.acme.sh/acme.sh --issue -d "${domain}" -k ec-256 --webroot "$website_dir" --force; then
     print_ok "SSL 证书生成成功"
     sleep 2
-    if "$HOME"/.acme.sh/acme.sh --installcert -d "${domain}" --fullchainpath /ssl/xray.crt --keypath /ssl/xray.key --reloadcmd "systemctl restart xray" --reloadcmd "systemctl restart nginx" --ecc --force; then
+    if "$HOME"/.acme.sh/acme.sh --installcert -d "${domain}" --fullchainpath /ssl/${domain}.crt --keypath /ssl/${domain}.key --reloadcmd "systemctl restart xray" --reloadcmd "systemctl restart nginx" --ecc --force; then
       print_ok "SSL 证书配置成功"
       sleep 2
       if [[ -n $(type -P wgcf) && -n $(type -P wg-quick) ]]; then
@@ -542,7 +555,7 @@ function acme() {
   elif "$HOME"/.acme.sh/acme.sh --issue -d "${domain}" -k ec-256 --webroot "$website_dir" --force --listen-v6; then
     print_ok "SSL 证书生成成功"
     sleep 2
-    if "$HOME"/.acme.sh/acme.sh --installcert -d "${domain}" --fullchainpath /ssl/xray.crt --keypath /ssl/xray.key --reloadcmd "systemctl restart xray" --reloadcmd "systemctl restart nginx" --ecc --force; then
+    if "$HOME"/.acme.sh/acme.sh --installcert -d "${domain}" --fullchainpath /ssl/${domain}.crt --keypath /ssl/${domain}.key --reloadcmd "systemctl restart xray" --reloadcmd "systemctl restart nginx" --ecc --force; then
       print_ok "SSL 证书配置成功"
       sleep 2
       if [[ -n $(type -P wgcf) && -n $(type -P wg-quick) ]]; then
@@ -565,7 +578,7 @@ function acme() {
 function ssl_judge_and_install() {
 
   mkdir -p /ssl >/dev/null 2>&1
-  if [[ -f "/ssl/xray.key" || -f "/ssl/xray.crt" ]]; then
+  if [[ -f "/ssl/${domain}.key" || -f "/ssl/${domain}.crt" ]]; then
     print_ok "/ssl 目录下证书文件已存在"
     print_ok "是否删除 /ssl 目录下的证书文件 [Y/N]?"
     read -r ssl_delete
@@ -579,11 +592,11 @@ function ssl_judge_and_install() {
     esac
   fi
 
-  if [[ -f "/ssl/xray.key" || -f "/ssl/xray.crt" ]]; then
+  if [[ -f "/ssl/${domain}.key" || -f "/ssl/${domain}.crt" ]]; then
     echo "证书文件已存在"
   elif [[ -f "$HOME/.acme.sh/${domain}_ecc/${domain}.key" && -f "$HOME/.acme.sh/${domain}_ecc/${domain}.cer" ]]; then
     echo "证书文件已存在"
-    "$HOME"/.acme.sh/acme.sh --installcert -d "${domain}" --fullchainpath /ssl/xray.crt --keypath /ssl/xray.key --ecc
+    "$HOME"/.acme.sh/acme.sh --installcert -d "${domain}" --fullchainpath /ssl/${domain}.crt --keypath /ssl/${domain}.key --ecc
     judge "证书应用"
   else
     mkdir /ssl
@@ -777,6 +790,13 @@ function ws_information() {
   done
 }
 
+function nginx_information() {
+  echo -e "${Red} Xray 配置信息 ${Font}"
+  echo -e "${Red} 入站端口（port）：${Font}  $PORT"
+  echo -e "${Red} websocket路径（ws_path）：${Font}  $WS_PATH"
+  echo -e "${Red} 请前往X-UI配置入站节点 ${Font}"
+}
+
 function ws_link() {
   DOMAINS=$(cat ${domain_tmp_dir}/domain)
   IFS=$'\n'
@@ -848,12 +868,37 @@ function domain_add() {
   basic_ws_information
 }
 
+function xui_install() {
+  bash <(curl -Ls https://raw.githubusercontent.com/vaxilu/x-ui/master/install.sh)
+}
+
+function nginx_domain_add() {
+  is_root
+  system_check
+  dependency_install
+  basic_optimization
+
+  domain_check
+  port_exist_check 80
+
+  xray_config
+  nginx_install
+  configure_nginx_temp
+  configure_web
+  ssl_judge_and_install
+  configure_nginx
+
+  systemctl restart nginx
+  judge "Nginx 启动"
+  nginx_information
+}
+
 menu() {
   update_sh
   shell_mode_check
   echo -e "\t Xray 安装管理脚本 ${Red}[${shell_version}]${Font}"
   echo -e "\t---authored by wulabing---"
-  echo -e "\thttps://github.com/wulabing\n"
+  echo -e "\t---edited by Henry---"
 
   echo -e "当前已安装版本：${shell_mode}"
   echo -e "—————————————— 安装向导 ——————————————"""
@@ -875,7 +920,9 @@ menu() {
   echo -e "${Green}34.${Font} 更新 Xray-core"
   echo -e "${Green}35.${Font} 安装 Xray-core 测试版(Pre)"
   echo -e "${Green}36.${Font} 手动更新SSL证书"
-  echo -e "${Green}37.${Font} 新增域名"
+  echo -e "${Green}37.${Font} 新增新ip和新域名"
+  echo -e "${Green}38.${Font} 安装 xui"
+  echo -e "${Green}39.${Font} 安装 nginx, 配置xui入站节点"
   echo -e "${Green}40.${Font} 退出"
   read -rp "请输入数字：" menu_num
   case $menu_num in
@@ -941,6 +988,12 @@ menu() {
     ;;
   37)
     domain_add
+    ;;
+  38)
+    xui_install
+    ;;
+  39)
+    nginx_domain_add
     ;;
   40)
     exit 0
