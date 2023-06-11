@@ -9,6 +9,7 @@
 
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 stty erase ^?
+stty erase ^H
 
 cd "$(
   cd "$(dirname "$0")" || exit
@@ -35,7 +36,7 @@ xray_access_log="/var/log/xray/access.log"
 xray_error_log="/var/log/xray/error.log"
 cert_dir="/usr/local/etc/xray"
 domain_tmp_dir="/usr/local/etc/xray"
-nginx_conf_dir="/etc/nginx/conf/conf.d"
+nginx_conf_dir="/etc/nginx/conf.d"
 compatible_nginx_conf="no"
 
 cert_group="nobody"
@@ -108,6 +109,7 @@ function system_check() {
     # 清除可能的遗留问题
     rm -f /etc/apt/sources.list.d/nginx.list
     # nginx 安装预处理
+    apt update
     $INS curl gnupg2 ca-certificates lsb-release debian-archive-keyring
     curl https://nginx.org/keys/nginx_signing.key | gpg --dearmor \
     | tee /usr/share/keyrings/nginx-archive-keyring.gpg >/dev/null
@@ -790,10 +792,40 @@ function ws_information() {
   done
 }
 
+function nginx_domain_list() {
+  for str in $(ls ${nginx_conf_dir}/*.conf); do 
+    file=${str##*/}
+    filename=${file%.*}
+    suffix=${file##*.}
+    if [[ ${filename} != "default" && ${suffix} == "conf" ]]; then
+      echo "${filename}";
+    fi
+  done
+}
+
+function nginx_conf_list() {
+  cnt=1
+  for str in $(ls ${nginx_conf_dir}/*.conf); do
+    file=${str##*/}
+    filename=${file%.*}
+    suffix=${file##*.}
+    if [[ ${filename} != "default" && ${suffix} == "conf" ]]; then
+      echo "${cnt}. ${filename}";
+      location=$(grep 'location' ${str} | awk '{print $2}')
+      port=$(grep 'proxy_pass' ${str} | awk -F'[/:;]' '{print $5}')
+      echo -e "${Red} xui-ws伪装路径（ws_path）： ${Font} $location"
+      echo -e "${Red} xui-入站端口（port）： ${Font} $port"
+      ((cnt=cnt+1))
+    fi
+  done
+}
+
 function nginx_information() {
-  echo -e "${Red} Xray 配置信息 ${Font}"
-  echo -e "${Red} 入站端口（port）：${Font}  $PORT"
-  echo -e "${Red} websocket路径（ws_path）：${Font}  $WS_PATH"
+  echo -e "${Red} nginx 配置信息 ${Font}"
+  echo -e "${Red} 节点域名：${Font}  $domain"
+  echo -e "${Red} 节点端口：${Font}  443"
+  echo -e "${Red} xui-入站端口（port）：${Font}  $inbound_port"
+  echo -e "${Red} xui-ws伪装路径（ws_path）：${Font}  $WS_PATH"
   echo -e "${Red} 请前往X-UI配置入站节点 ${Font}"
 }
 
@@ -872,25 +904,55 @@ function xui_install() {
   bash <(curl -Ls https://raw.githubusercontent.com/vaxilu/x-ui/master/install.sh)
 }
 
-function nginx_domain_add() {
+function xui_nginx_install() {
   is_root
   system_check
   dependency_install
   basic_optimization
 
-  domain_check
+  #domain_check
   port_exist_check 80
 
-  xray_config
+  #xray_config
   nginx_install
+  #configure_nginx_temp
+  #configure_web
+  #ssl_judge_and_install
+  #configure_nginx
+
+  systemctl restart nginx
+  judge "Nginx 启动"
+  judge "Nginx 安装成功"
+  #nginx_information
+}
+
+function xui_nginx_add() {
+  domain_check
+  xray_config
   configure_nginx_temp
   configure_web
   ssl_judge_and_install
   configure_nginx
-
   systemctl restart nginx
   judge "Nginx 启动"
   nginx_information
+}
+
+function xui_nginx_delete() {
+  nginx_domain_list
+  read -rp "请输入你要删除的域名:" delete_domain
+  if [[ -e ${nginx_conf_dir}/${delete_domain}.conf ]]; then
+	  rm -rf ${nginx_conf_dir}/${delete_domain}.conf
+	  judge "删除${delete_domain}"
+	  systemctl restart nginx
+	  judge "重启nginx"
+  else
+	  print_error "域名输入错误"
+  fi
+}
+
+function xui_nginx_list() {
+  nginx_conf_list
 }
 
 menu() {
@@ -921,9 +983,13 @@ menu() {
   echo -e "${Green}35.${Font} 安装 Xray-core 测试版(Pre)"
   echo -e "${Green}36.${Font} 手动更新SSL证书"
   echo -e "${Green}37.${Font} 新增新ip和新域名"
+  echo -e "—————————————— xui相关 ——————————————"
   echo -e "${Green}38.${Font} 安装 xui"
-  echo -e "${Green}39.${Font} 安装 nginx, 配置xui入站节点"
-  echo -e "${Green}40.${Font} 退出"
+  echo -e "${Green}39.${Font} 安装 nginx"
+  echo -e "${Green}40.${Font} 新增 xui入站节点对应nginx配置"
+  echo -e "${Green}41.${Font} 删除 xui入站节点对应nginx配置"
+  echo -e "${Green}42.${Font} 列出 xui入站节点对应nginx配置"
+  echo -e "${Green}45.${Font} 退出"
   read -rp "请输入数字：" menu_num
   case $menu_num in
   0)
@@ -993,9 +1059,18 @@ menu() {
     xui_install
     ;;
   39)
-    nginx_domain_add
+    xui_nginx_install
     ;;
   40)
+    xui_nginx_add
+    ;;
+  41)
+    xui_nginx_delete
+    ;;
+  42)
+    xui_nginx_list
+    ;;   
+  45)
     exit 0
     ;;
   *)
