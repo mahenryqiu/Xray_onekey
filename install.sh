@@ -901,7 +901,7 @@ function domain_add() {
 }
 
 function xui_install() {
-  bash <(curl -Ls https://raw.githubusercontent.com/FranzKafkaYu/x-ui/master/install.sh)
+  bash <(wget -qO- https://raw.githubusercontent.com/sing-web/x-ui/main/install_CN.sh)
 }
 
 function xui_nginx_install() {
