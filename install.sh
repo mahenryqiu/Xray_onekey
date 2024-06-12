@@ -8,8 +8,6 @@
 #====================================================
 
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-stty erase ^?
-stty erase ^H
 
 cd "$(
   cd "$(dirname "$0")" || exit
@@ -901,7 +899,7 @@ function domain_add() {
 }
 
 function xui_install() {
-  bash <(wget -qO- https://raw.githubusercontent.com/sing-web/x-ui/main/install_CN.sh)
+  bash <(curl -Ls https://raw.githubusercontent.com/FranzKafkaYu/x-ui/master/install.sh)
 }
 
 function xui_nginx_install() {
